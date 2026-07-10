@@ -1,0 +1,13 @@
+# Arquivos gerados pelo ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+
+# Arquivos locais do VS Code
+.vscode/
+
+# Arquivos temporarios
+*.log
+*.tmp
+*~
