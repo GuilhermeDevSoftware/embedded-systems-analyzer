@@ -1,102 +1,112 @@
 #include <stdint.h>
 
-#include "driver/gpio.h"
 #include "driver/uart.h"
-
 #include "esp_err.h"
 #include "esp_log.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#define LAB_UART_PORT       UART_NUM_2
-#define LAB_UART_TX_GPIO    GPIO_NUM_17
-#define LAB_UART_RX_GPIO    GPIO_NUM_16
-#define LAB_UART_BAUD_RATE  9600
-#define LAB_UART_RX_BUFFER  256
+#define UART_PORT       UART_NUM_2
+#define UART_TX_PIN     17
+#define UART_RX_PIN     16
+#define UART_BAUD_RATE  9600
+#define UART_RX_BUFFER  256
 
-static const char *TAG = "UART_LAB";
+static const char *TAG = "UART_TEST";
 
-static void uart_lab_init(void)
+static void uart_init(void)
 {
     const uart_config_t uart_config = {
-        .baud_rate = LAB_UART_BAUD_RATE,
+        .baud_rate = UART_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .rx_flow_ctrl_thresh = 0,
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    ESP_ERROR_CHECK(
-        uart_driver_install(
-            LAB_UART_PORT,
-            LAB_UART_RX_BUFFER,
-            0,
-            0,
-            NULL,
-            0
-        )
-    );
+    ESP_ERROR_CHECK(uart_param_config(UART_PORT, &uart_config));
 
-    ESP_ERROR_CHECK(
-        uart_param_config(
-            LAB_UART_PORT,
-            &uart_config
-        )
-    );
+    ESP_ERROR_CHECK(uart_set_pin(
+        UART_PORT,
+        UART_TX_PIN,
+        UART_RX_PIN,
+        UART_PIN_NO_CHANGE,
+        UART_PIN_NO_CHANGE
+    ));
 
-    ESP_ERROR_CHECK(
-        uart_set_pin(
-            LAB_UART_PORT,
-            LAB_UART_TX_GPIO,
-            LAB_UART_RX_GPIO,
-            UART_PIN_NO_CHANGE,
-            UART_PIN_NO_CHANGE
-        )
-    );
-
-    ESP_LOGI(TAG, "UART2 inicializada");
-    ESP_LOGI(TAG, "TX: GPIO%d", LAB_UART_TX_GPIO);
-    ESP_LOGI(TAG, "RX: GPIO%d", LAB_UART_RX_GPIO);
-    ESP_LOGI(TAG, "Configuracao: %d baud, 8N1", LAB_UART_BAUD_RATE);
+    ESP_ERROR_CHECK(uart_driver_install(
+        UART_PORT,
+        UART_RX_BUFFER,
+        0,
+        0,
+        NULL,
+        0
+    ));
 }
 
 void app_main(void)
 {
-    const uint8_t test_byte = 0x55;
+    /*
+     * Não utilizar strlen() neste vetor.
+     *
+     * O primeiro byte é 0x00, que seria interpretado como
+     * final de uma string convencional em C.
+     */
+    static const uint8_t test_bytes[] = {
+        0x00,
+        0xFF,
+        0x55,
+        0xAA,
+        0x41
+    };
 
-    uart_lab_init();
+    uart_init();
+
+    ESP_LOGI(TAG, "UART2 configurada em 9600 baud, formato 8N1");
+    ESP_LOGI(TAG, "TX = GPIO%d | RX = GPIO%d", UART_TX_PIN, UART_RX_PIN);
+
+    ESP_LOGI(TAG, "Transmissao iniciara em 2 segundos");
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     while (1) {
-        const int written_bytes = uart_write_bytes(
-            LAB_UART_PORT,
-            &test_byte,
-            sizeof(test_byte)
-        );
+        ESP_LOGI(TAG, "Iniciando sequencia");
 
-        if (written_bytes == sizeof(test_byte)) {
+        for (size_t i = 0; i < sizeof(test_bytes); i++) {
+            const int bytes_written = uart_write_bytes(
+                UART_PORT,
+                &test_bytes[i],
+                1
+            );
+
+            if (bytes_written != 1) {
+                ESP_LOGE(
+                    TAG,
+                    "Falha ao transmitir 0x%02X",
+                    (unsigned int)test_bytes[i]
+                );
+                continue;
+            }
+
             ESP_ERROR_CHECK(
-                uart_wait_tx_done(
-                    LAB_UART_PORT,
-                    pdMS_TO_TICKS(100)
-                )
+                uart_wait_tx_done(UART_PORT, pdMS_TO_TICKS(100))
             );
 
             ESP_LOGI(
                 TAG,
-                "Byte transmitido: HEX=0x%02X DEC=%u",
-                test_byte,
-                test_byte
+                "TX enviado: 0x%02X",
+                (unsigned int)test_bytes[i]
             );
-        } else {
-            ESP_LOGE(
-                TAG,
-                "Falha na transmissao: retorno=%d",
-                written_bytes
-            );
+
+            /*
+             * Intervalo proposital para separar visualmente
+             * os quadros no analisador lógico.
+             */
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI(TAG, "Sequencia concluida");
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
