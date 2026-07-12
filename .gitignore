@@ -11,3 +11,4 @@ managed_components/
 *.log
 *.tmp
 *~
+*:Zone.Identifier
